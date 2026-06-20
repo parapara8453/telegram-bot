@@ -1,5 +1,7 @@
 import json
 import os
+from flask import Flask
+from threading import Thread
 
 from dotenv import load_dotenv
 
@@ -288,6 +290,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+app_web = Flask(__name__)
+
+@app_web.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app_web.run(host="0.0.0.0", port=port)
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -358,4 +369,5 @@ def main():
 
 
 if __name__ == "__main__":
+    Thread(target=run_web).start()
     main()
