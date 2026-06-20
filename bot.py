@@ -23,6 +23,9 @@ from supabase import create_client
 
 
 load_dotenv()
+print("URL:", os.getenv("SUPABASE_URL"))
+print("KEY:", os.getenv("SUPABASE_KEY")[:20])
+print("TOKEN:", os.getenv("TOKEN")[:10])
 
 TOKEN = os.getenv("TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
