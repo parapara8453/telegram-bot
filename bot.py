@@ -287,6 +287,47 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+async def welcome_new_member(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    text = """
+🎉 ようこそ！
+
+まずは下のコマンドを送信してください。
+
+▶️ /start
+
+━━━━━━━━━━
+
+📤 投稿する
+
+👀 一覧を見る
+
+━━━━━━━━━━
+
+【投稿手順】
+
+1️⃣ 投稿を選択
+
+2️⃣ カテゴリを選択
+
+3️⃣ タイトルを入力
+
+4️⃣ 価格を入力
+
+5️⃣ 画像または動画を送信
+
+━━━━━━━━━━
+
+🎁 動画を投稿するとポイントを獲得できます。
+
+貯めたポイントを使って、
+ほかの動画を購入しましょう！
+"""
+
+    await update.message.reply_text(text)
+
 app_web = Flask(__name__)
 
 @app_web.route("/")
@@ -352,6 +393,13 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
+    app.add_handler(
+    MessageHandler(
+        filters.StatusUpdate.NEW_CHAT_MEMBERS,
+        welcome_new_member
+    )
+)
+
 
     app.add_handler(
         MessageHandler(
