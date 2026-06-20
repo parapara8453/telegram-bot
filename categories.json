@@ -1,0 +1,16 @@
+{
+  "outdoor": [
+    "EU",
+    "ASIA",
+    "NorthAmerica",
+    "SouthAmerica",
+    "Africa"
+  ],
+  "indoor": [
+    "EU",
+    "ASIA",
+    "NorthAmerica",
+    "SouthAmerica",
+    "Africa"
+  ]
+}

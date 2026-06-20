@@ -1,1 +1,5 @@
-python-telegram-bot==20.0
+python-telegram-bot==20.8
+supabase==2.5.1
+python-dotenv==1.0.1
+psycopg2-binary==2.9.9
+websockets>=13,<16

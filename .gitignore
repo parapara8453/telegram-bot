@@ -1,0 +1,8 @@
+.env
+**pycache**/
+*.pyc
+.DS_Store
+
+images/
+data.db
+bot_backup.py
