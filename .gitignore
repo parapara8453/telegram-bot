@@ -1,8 +1,19 @@
+# Environment variables
 .env
-**pycache**/
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
 *.pyc
+
+# macOS
 .DS_Store
 
-images/
-data.db
-bot_backup.py
+# VS Code
+.vscode/
+
+# Logs
+*.log
