@@ -552,29 +552,31 @@ async def show_detail_callback(
     is_owner = item["owner_id"] == user_id
     has_access = is_owner or bool(purchased.data)
 
-  category = (
-    supabase.table("categories")
-    .select("name")
-    .eq("id", item["category_id"])
-    .single()
-    .execute()
-).data
+    is_owner = item["owner_id"] == user_id
+    has_access = is_owner or bool(purchased.data)
 
-region = (
-    supabase.table("regions")
-    .select("name")
-    .eq("id", item["region_id"])
-    .single()
-    .execute()
-).data
+    category = (
+        supabase.table("categories")
+        .select("name")
+        .eq("id", item["category_id"])
+        .single()
+        .execute()
+    ).data
 
-caption = (
-    f"📌 {item['title']}\n"
-    f"💰 {item['price']} コイン\n"
-    f"📂 {category['name']} / {region['name']}"
-)
+    region = (
+        supabase.table("regions")
+        .select("name")
+        .eq("id", item["region_id"])
+        .single()
+        .execute()
+    ).data
 
-
+    caption = (
+        f"📌 {item['title']}\n"
+        f"💰 {item['price']} コイン\n"
+        f"📂 {category['name']} / {region['name']}"
+    )
+    
     buttons = []
 
     if not has_access:
@@ -1246,7 +1248,6 @@ def main():
             pattern="^delete:"
         )
     )
-
     app.add_handler(
         MessageHandler(
             filters.StatusUpdate.NEW_CHAT_MEMBERS,
@@ -1254,13 +1255,19 @@ def main():
         )
     )
 
-       print("Bot 起動中...")
+    print("Bot 起動中...")
 
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
     )
 
+    print("Bot 起動中...")
+
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 if __name__ == "__main__":
     web_thread = Thread(target=run_web)
