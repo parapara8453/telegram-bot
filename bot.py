@@ -46,9 +46,10 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     MEDIA,
     THUMBNAIL,
     BROWSE,
+    SEARCH_TITLE,
     ADD_CATEGORY,
     DELETE_CATEGORY,
-) = range(10)
+) = range(11)
 
 
 def get_categories():
@@ -68,7 +69,10 @@ def get_subcategories(category_name):
 def main_menu(user_id):
     keyboard = [
         [KeyboardButton("📤 投稿")],
-        [KeyboardButton("👀 一覧を見る")],
+        [KeyboardButton("🌎 全ての動画")],
+        [KeyboardButton("🔍 タイトル検索")],
+        [KeyboardButton("📂 カテゴリ検索")],
+        [KeyboardButton("🔥 人気ランキング")],
         [KeyboardButton("🪙 残高確認")],
         [KeyboardButton("👤 マイページ")],
     ]
@@ -460,6 +464,90 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+async def show_all_contents(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    result = (
+        supabase.table("contents")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(
+            "投稿がありません。"
+        )
+        return
+
+    buttons = []
+
+    for item in result.data:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{item['title']}（💰{item['price']}）",
+                callback_data=f"detail:{item['id']}",
+            )
+        ])
+
+    await update.message.reply_text(
+        "🌎 全ての動画",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def start_title_search(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    await update.message.reply_text(
+        "🔍 タイトルを入力してください。"
+    )
+
+    return SEARCH_TITLE
+
+
+async def search_title(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyword = update.message.text.strip()
+
+    result = (
+        supabase.table("contents")
+        .select("*")
+        .ilike("title", f"%{keyword}%")
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(
+            "該当する動画が見つかりませんでした。",
+            reply_markup=main_menu(update.effective_user.id),
+        )
+        return ConversationHandler.END
+
+    buttons = []
+
+    for item in result.data:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{item['title']}（💰{item['price']}）",
+                callback_data=f"detail:{item['id']}",
+            )
+        ])
+
+    await update.message.reply_text(
+        f"🔍 検索結果：{keyword}",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+    return ConversationHandler.END
+
 
 async def show_contents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -576,7 +664,7 @@ async def show_detail_callback(
         f"💰 {item['price']} コイン\n"
         f"📂 {category['name']} / {region['name']}"
     )
-    
+
     buttons = []
 
     if not has_access:
@@ -1061,15 +1149,19 @@ def main():
     conv = ConversationHandler(
         allow_reentry=True,
         entry_points=[
-            MessageHandler(
-                filters.Regex("^📤 投稿$"),
-                upload_start,
-            ),
-            MessageHandler(
-                filters.Regex("^👀 一覧を見る$"),
-                show_contents,
-            ),
-        ],
+    MessageHandler(
+        filters.Regex("^📤 投稿$"),
+        upload_start,
+    ),
+    MessageHandler(
+        filters.Regex("^📂 カテゴリ検索$"),
+        show_contents,
+    ),
+    MessageHandler(
+        filters.Regex("^🔍 タイトル検索$"),
+        start_title_search,
+    ),
+],
         states={
             MEDIA_TYPE: [
                 MessageHandler(
@@ -1123,6 +1215,12 @@ def main():
                     browse_category,
                 )
             ],
+            SEARCH_TITLE: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        search_title,
+    )
+],
         },
         fallbacks=[
             CommandHandler("cancel", cancel)
@@ -1218,6 +1316,23 @@ def main():
         )
     )
 
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^🌎 全ての動画$"),
+            show_all_contents,
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^🔍 タイトル検索$"),
+            start_title_search,
+        )
+    )
+
+    app.add_handler(conv)
+    app.add_handler(category_conv)
+
     app.add_handler(conv)
     app.add_handler(category_conv)
 
@@ -1260,13 +1375,8 @@ def main():
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
-    )
-
-    print("Bot 起動中...")
-
-    app.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
+        stop_signals=None,
+        close_loop=False,
     )
 
 if __name__ == "__main__":
