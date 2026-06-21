@@ -51,6 +51,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     DELETE_CATEGORY,
 ) = range(11)
 
+PAGE_SIZE = 10
 
 def get_categories():
     result = (
@@ -75,6 +76,7 @@ def main_menu(user_id):
         [KeyboardButton("🔥 人気ランキング")],
         [KeyboardButton("🪙 残高確認")],
         [KeyboardButton("👤 マイページ")],
+        [KeyboardButton("🧾 購入履歴")],
     ]
 
     if user_id == ADMIN_ID:
@@ -198,6 +200,43 @@ async def show_my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(text)
+
+async def show_purchase_history(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user_id = update.effective_user.id
+
+    result = (
+        supabase.table("purchases")
+        .select("content_id, created_at")
+        .eq("buyer_id", user_id)
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(
+            "購入履歴はありません。"
+        )
+        return
+
+    text = "🧾 購入履歴\n\n"
+
+    for p in result.data:
+        item = (
+            supabase.table("contents")
+            .select("title")
+            .eq("id", p["content_id"])
+            .single()
+            .execute()
+        ).data
+
+        text += f"・{item['title']}\n"
+
+    await update.message.reply_text(text)
+
 
 async def upload_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -468,11 +507,16 @@ async def show_all_contents(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    page = context.user_data.get("page", 0)
+
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE - 1
+
     result = (
         supabase.table("contents")
         .select("*")
         .order("created_at", desc=True)
-        .limit(20)
+        .range(start, end)
         .execute()
     )
 
@@ -492,11 +536,29 @@ async def show_all_contents(
             )
         ])
 
-    await update.message.reply_text(
-        "🌎 全ての動画",
-        reply_markup=InlineKeyboardMarkup(buttons),
+    nav_buttons = []
+
+    if page > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                "◀ 前へ",
+                callback_data="page:prev",
+            )
+        )
+
+    nav_buttons.append(
+        InlineKeyboardButton(
+            "次へ ▶",
+            callback_data="page:next",
+        )
     )
 
+    buttons.append(nav_buttons)
+
+    await update.message.reply_text(
+        f"🌎 全ての動画（{page + 1}ページ目）",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 async def start_title_search(
     update: Update,
@@ -549,6 +611,30 @@ async def search_title(
     return ConversationHandler.END
 
 
+async def change_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    await query.answer()
+
+    page = context.user_data.get("page", 0)
+
+    if query.data == "page:next":
+        page += 1
+    else:
+        page = max(0, page - 1)
+
+    context.user_data["page"] = page
+
+    fake_update = type("obj", (), {})()
+    fake_update.message = query.message
+
+    await show_all_contents(
+        fake_update,
+        context,
+    )
+
 async def show_contents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
@@ -575,10 +661,18 @@ async def browse_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove(),
     )
 
+    category_data = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", category)
+        .single()
+        .execute()
+    ).data
+
     result = (
         supabase.table("contents")
         .select("*")
-        .eq("category_1", category)
+        .eq("category_id", category_data["id"])
         .order("created_at", desc=True)
         .limit(10)
         .execute()
@@ -638,10 +732,13 @@ async def show_detail_callback(
     )
 
     is_owner = item["owner_id"] == user_id
-    has_access = is_owner or bool(purchased.data)
+    is_admin = user_id == ADMIN_ID
 
-    is_owner = item["owner_id"] == user_id
-    has_access = is_owner or bool(purchased.data)
+    has_access = (
+        is_owner
+        or is_admin
+        or bool(purchased.data)
+    )
 
     category = (
         supabase.table("categories")
@@ -1140,7 +1237,13 @@ def home():
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
-    app_web.run(host="0.0.0.0", port=port)
+
+    app_web.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+    )
 
 
 def main():
@@ -1333,8 +1436,12 @@ def main():
     app.add_handler(conv)
     app.add_handler(category_conv)
 
-    app.add_handler(conv)
-    app.add_handler(category_conv)
+    app.add_handler(
+        CallbackQueryHandler(
+            change_page,
+            pattern="^page:"
+        )
+    )
 
     app.add_handler(
         CallbackQueryHandler(
@@ -1363,10 +1470,18 @@ def main():
             pattern="^delete:"
         )
     )
+
     app.add_handler(
         MessageHandler(
             filters.StatusUpdate.NEW_CHAT_MEMBERS,
             welcome_new_member,
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^🧾 購入履歴$"),
+            show_purchase_history,
         )
     )
 
@@ -1379,9 +1494,11 @@ def main():
         close_loop=False,
     )
 
+
 if __name__ == "__main__":
     web_thread = Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
 
     main()
+    
