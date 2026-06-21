@@ -63,24 +63,7 @@ def get_categories():
 
 
 def get_subcategories(category_name):
-    category = (
-        supabase.table("categories")
-        .select("id")
-        .eq("name", category_name)
-        .single()
-        .execute()
-    )
-
-    result = (
-        supabase.table("subcategories")
-        .select("*")
-        .eq("category_id", category.data["id"])
-        .order("sort_order")
-        .execute()
-    )
-
-    return result.data
-
+    return []
 
 def main_menu(user_id):
     keyboard = [
@@ -265,13 +248,26 @@ async def select_category1(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return CATEGORY1
 
-    context.user_data["category1"] = category1
+    category = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", category1)
+        .single()
+        .execute()
+    )
 
-    subcategories = get_subcategories(category1)
+    context.user_data["category_id"] = category.data["id"]
+
+    regions = (
+        supabase.table("regions")
+        .select("*")
+        .order("name")
+        .execute()
+    ).data
 
     keyboard = [
-        [KeyboardButton(s["name"])]
-        for s in subcategories
+        [KeyboardButton(r["name"])]
+        for r in regions
     ]
 
     await update.message.reply_text(
@@ -287,7 +283,17 @@ async def select_category1(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def select_category2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["category2"] = update.message.text
+    region_name = update.message.text
+
+    region = (
+        supabase.table("regions")
+        .select("id")
+        .eq("name", region_name)
+        .single()
+        .execute()
+    )
+
+    context.user_data["region_id"] = region.data["id"]
 
     await update.message.reply_text(
         "タイトルを入力してください。",
@@ -434,8 +440,8 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "owner_id": telegram_id,
         "media_type": media_type,
         "title": context.user_data["title"],
-        "category_1": context.user_data["category1"],
-        "category_2": context.user_data["category2"],
+        "category_id": context.user_data["category_id"],
+        "region_id": context.user_data["region_id"],
         "price": context.user_data["price"],
         "telegram_file_id": context.user_data["telegram_file_id"],
         "thumbnail_file_id": context.user_data["thumbnail_file_id"],
@@ -546,11 +552,28 @@ async def show_detail_callback(
     is_owner = item["owner_id"] == user_id
     has_access = is_owner or bool(purchased.data)
 
-    caption = (
-        f"📌 {item['title']}\n"
-        f"💰 {item['price']} コイン\n"
-        f"📂 {item['category_1']} / {item['category_2']}"
-    )
+  category = (
+    supabase.table("categories")
+    .select("name")
+    .eq("id", item["category_id"])
+    .single()
+    .execute()
+).data
+
+region = (
+    supabase.table("regions")
+    .select("name")
+    .eq("id", item["region_id"])
+    .single()
+    .execute()
+).data
+
+caption = (
+    f"📌 {item['title']}\n"
+    f"💰 {item['price']} コイン\n"
+    f"📂 {category['name']} / {region['name']}"
+)
+
 
     buttons = []
 
@@ -1231,11 +1254,17 @@ def main():
         )
     )
 
-    print("Bot 起動中...")
+       print("Bot 起動中...")
 
-    app.run_polling()
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 
 if __name__ == "__main__":
-    Thread(target=run_web).start()
+    web_thread = Thread(target=run_web)
+    web_thread.daemon = True
+    web_thread.start()
+
     main()
