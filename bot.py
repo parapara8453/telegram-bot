@@ -70,12 +70,19 @@ def get_subcategories(category_name):
 def main_menu(user_id):
     keyboard = [
         [KeyboardButton("📤 投稿")],
-        [KeyboardButton("🌎 全ての動画")],
-        [KeyboardButton("🔍 タイトル検索")],
-        [KeyboardButton("📂 カテゴリ検索")],
+        [
+            KeyboardButton("🎥 動画一覧"),
+            KeyboardButton("🖼 写真一覧"),
+        ],
+        [
+            KeyboardButton("🔍 タイトル検索"),
+            KeyboardButton("📂 カテゴリ検索"),
+        ],
         [KeyboardButton("🔥 人気ランキング")],
-        [KeyboardButton("🪙 残高確認")],
-        [KeyboardButton("👤 マイページ")],
+        [
+            KeyboardButton("🪙 残高確認"),
+            KeyboardButton("👤 マイページ"),
+        ],
         [KeyboardButton("🧾 購入履歴")],
     ]
 
@@ -503,6 +510,50 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+
+async def show_media_list(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    media_type: str,
+    title: str,
+):
+    result = (
+        supabase.table("contents")
+        .select("*")
+        .eq("media_type", media_type)
+        .order("created_at", desc=True)
+        .limit(PAGE_SIZE)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(f"{title}はありません。")
+        return
+
+    buttons = []
+
+    for item in result.data:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{item['title']}（💰{item['price']}）",
+                callback_data=f"detail:{item['id']}",
+            )
+        ])
+
+    await update.message.reply_text(
+        title,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def show_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_media_list(update, context, "video", "🎥 動画一覧")
+
+
+async def show_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_media_list(update, context, "photo", "🖼 写真一覧")
+
+
 async def show_all_contents(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -767,7 +818,7 @@ async def show_detail_callback(
     if not has_access:
         caption += "\n\n🔒 購入すると閲覧できます。"
 
-        if not is_owner:
+        if not is_owner and not is_admin:
             buttons.append([
                 InlineKeyboardButton(
                     "🛒 購入",
@@ -1421,8 +1472,15 @@ def main():
 
     app.add_handler(
         MessageHandler(
-            filters.Regex("^🌎 全ての動画$"),
-            show_all_contents,
+            filters.Regex("^🎥 動画一覧$"),
+            show_videos,
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^🖼 写真一覧$"),
+            show_photos,
         )
     )
 
