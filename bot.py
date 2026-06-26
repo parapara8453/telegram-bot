@@ -1,9 +1,6 @@
-import os
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
-
-from dotenv import load_dotenv
 
 from telegram import (
     Update,
@@ -24,20 +21,12 @@ from telegram.ext import (
     filters,
 )
 
-from supabase import create_client
+from database import supabase
 
-
-load_dotenv()
-
-TOKEN = os.getenv("TOKEN")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-ADMIN_ID = 8214877974
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-(
+from config import (
+    TOKEN,
+    ADMIN_ID,
+    PAGE_SIZE,
     MEDIA_TYPE,
     CATEGORY1,
     CATEGORY2,
@@ -49,9 +38,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     SEARCH_TITLE,
     ADD_CATEGORY,
     DELETE_CATEGORY,
-) = range(11)
+)
 
-PAGE_SIZE = 10
 
 def get_categories():
     result = (
