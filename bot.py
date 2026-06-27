@@ -1,3 +1,4 @@
+import os
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,8 @@ from telegram import (
     InlineKeyboardButton,
 )
 
+from keyboards.main import main_menu, admin_menu
+
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -23,9 +26,16 @@ from telegram.ext import (
 
 from database import supabase
 
+from telegram.constants import ChatType
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from services.user import get_user
+
 from config import (
     TOKEN,
     ADMIN_ID,
+    GROUP_ID,
     PAGE_SIZE,
     MEDIA_TYPE,
     CATEGORY1,
@@ -38,7 +48,14 @@ from config import (
     SEARCH_TITLE,
     ADD_CATEGORY,
     DELETE_CATEGORY,
-)
+    ADD_REGION,
+    DELETE_REGION,
+    SELECT_PARENT_CATEGORY,
+    ADD_SUBCATEGORY,
+    SELECT_DELETE_PARENT,
+    CHANGE_PRICE,
+    DELETE_SUBCATEGORY,
+    )
 
 
 def get_categories():
@@ -55,45 +72,6 @@ def get_categories():
 def get_subcategories(category_name):
     return []
 
-def main_menu(user_id):
-    keyboard = [
-        [KeyboardButton("📤 投稿")],
-        [
-            KeyboardButton("🎥 動画一覧"),
-            KeyboardButton("🖼 写真一覧"),
-        ],
-        [
-            KeyboardButton("🔍 タイトル検索"),
-            KeyboardButton("📂 カテゴリ検索"),
-        ],
-        [KeyboardButton("🔥 人気ランキング")],
-        [
-            KeyboardButton("🪙 残高確認"),
-            KeyboardButton("👤 マイページ"),
-        ],
-        [KeyboardButton("🧾 購入履歴")],
-    ]
-
-    if user_id == ADMIN_ID:
-        keyboard.append([KeyboardButton("🛠 管理")])
-
-    return ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True,
-    )
-
-
-def admin_menu():
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("📊 売上ランキング")],
-            [KeyboardButton("🚨 通報一覧")],
-            [KeyboardButton("🗂 カテゴリ管理")],
-            [KeyboardButton("🗑 投稿削除")],
-            [KeyboardButton("⬅️ 戻る")],
-        ],
-        resize_keyboard=True,
-    )
 
 def category_admin_menu():
     return ReplyKeyboardMarkup(
@@ -101,11 +79,22 @@ def category_admin_menu():
             [KeyboardButton("📋 カテゴリ一覧")],
             [KeyboardButton("➕ カテゴリ追加")],
             [KeyboardButton("➖ カテゴリ削除")],
+            [KeyboardButton("📍 地域管理")],
+            [KeyboardButton("📁 サブカテゴリ管理")],
             [KeyboardButton("⬅️ 戻る")],
         ],
         resize_keyboard=True,
     )
 
+def subcategory_admin_menu():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("➕ サブカテゴリ追加")],
+            [KeyboardButton("➖ サブカテゴリ削除")],
+            [KeyboardButton("⬅️ 戻る")],
+        ],
+        resize_keyboard=True,
+    )
 
 def category_menu():
     rows = []
@@ -120,6 +109,7 @@ def category_menu():
         resize_keyboard=True,
     )
 
+# MOVED TO services/user.py
 def get_user(telegram_id, username=None):
     result = (
         supabase.table("users")
@@ -147,12 +137,16 @@ def get_user(telegram_id, username=None):
 
 
 def calc_reward(media_type, file_size):
-    if media_type == "photo":
+    if media_type == "document":
         return 10
     return 20 if file_size >= 100 * 1024 * 1024 else 15
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await require_private_chat(update):
+        return
+
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -162,6 +156,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_private_chat(update):
+        return
     user = get_user(
         update.effective_user.id,
         update.effective_user.username,
@@ -175,6 +171,8 @@ async def show_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_private_chat(update):
+        return
     user_id = update.effective_user.id
     user = get_user(user_id, update.effective_user.username)
 
@@ -196,10 +194,50 @@ async def show_my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
 
+async def show_my_posts(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not await require_private_chat(update):
+        return
+
+    user_id = update.effective_user.id
+
+    result = (
+        supabase.table("contents")
+        .select("id,title,price")
+        .eq("owner_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(
+            "投稿はありません。"
+        )
+        return
+
+    buttons = []
+
+    for item in result.data:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📄 {item['title']}（💰{item['price']}）",
+                callback_data=f"detail:{item['id']}",
+            )
+        ])
+
+    await update.message.reply_text(
+        "📤 自分の投稿",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
 async def show_purchase_history(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await require_private_chat(update):
+        return
     user_id = update.effective_user.id
 
     result = (
@@ -217,26 +255,37 @@ async def show_purchase_history(
         )
         return
 
-    text = "🧾 購入履歴\n\n"
+    buttons = []
 
     for p in result.data:
         item = (
             supabase.table("contents")
-            .select("title")
+            .select("id, title")
             .eq("id", p["content_id"])
             .single()
             .execute()
         ).data
 
-        text += f"・{item['title']}\n"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📄 {item['title']}",
+                callback_data=f"detail:{item['id']}",
+            )
+        ])
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(
+        "🧾 購入履歴",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 async def upload_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_private_chat(update):
+        return ConversationHandler.END
+
     keyboard = [
         [KeyboardButton("🎥 動画")],
-        [KeyboardButton("🖼 写真")],
+        [KeyboardButton("📄 ファイル")],
     ]
 
     await update.message.reply_text(
@@ -253,7 +302,7 @@ async def upload_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def select_media_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["media_type"] = (
-        "video" if update.message.text == "🎥 動画" else "photo"
+        "video" if update.message.text == "🎥 動画" else "document"
     )
 
     keyboard = [
@@ -377,7 +426,7 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "動画を送信してください。"
         if context.user_data["media_type"] == "video"
-        else "写真を送信してください。"
+        else "ファイルを送信してください。"
     )
 
     await update.message.reply_text(text)
@@ -386,12 +435,14 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
+    if update.message.document:
+        file_id = update.message.document.file_id
 
         context.user_data["telegram_file_id"] = file_id
-        context.user_data["thumbnail_file_id"] = file_id
-        context.user_data["media_type"] = "photo"
+        context.user_data["file_size"] = (
+            update.message.document.file_size or 0
+        )
+        context.user_data["media_type"] = "document"
 
         return await finish_upload(update, context)
 
@@ -419,7 +470,7 @@ one_time_keyboard=True,
 
         return THUMBNAIL
 
-    await update.message.reply_text("写真または動画を送信してください。")
+    await update.message.reply_text("動画またはファイルを送信してください。")
     return MEDIA
 
 
@@ -457,7 +508,7 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user["daily_video_reward_count"] = 0
         updates["last_reward_date"] = str(today)
 
-    if media_type == "photo":
+    if media_type == "document":
         count = user.get("daily_photo_reward_count", 0)
         if count < 5:
             reward = 10
@@ -482,8 +533,28 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "region_id": context.user_data["region_id"],
         "price": context.user_data["price"],
         "telegram_file_id": context.user_data["telegram_file_id"],
-        "thumbnail_file_id": context.user_data["thumbnail_file_id"],
+        "thumbnail_file_id": context.user_data.get("thumbnail_file_id"),
     }).execute()
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🤖 DMで見る",
+                url="https://t.me/develpoing_bot"
+            )
+        ]
+    ])
+
+    await context.bot.send_message(
+        chat_id=GROUP_ID,
+        text=(
+            "🆕 新しい投稿\n\n"
+            f"📄 {context.user_data['title']}\n"
+            f"💰 {context.user_data['price']} コイン\n\n"
+            "👇 詳細・購入はこちら"
+        ),
+        reply_markup=keyboard,
+    )
 
     context.user_data.clear()
 
@@ -539,7 +610,7 @@ async def show_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_media_list(update, context, "photo", "🖼 写真一覧")
+    await show_media_list(update, context, "document", "📄 ファイル一覧")
 
 
 async def show_all_contents(
@@ -603,12 +674,14 @@ async def start_title_search(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await require_private_chat(update):
+        return
+
     await update.message.reply_text(
         "🔍 タイトルを入力してください。"
     )
 
     return SEARCH_TITLE
-
 
 async def search_title(
     update: Update,
@@ -675,6 +748,8 @@ async def change_page(
     )
 
 async def show_contents(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_private_chat(update):
+        return
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -713,10 +788,12 @@ async def browse_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         .select("*")
         .eq("category_id", category_data["id"])
         .order("created_at", desc=True)
-        .limit(10)
+        .limit(5)
         .execute()
     )
 
+    text = f"📂 {category}\n\n"
+    
     if len(result.data) == 0:
         await update.message.reply_text(
             "このカテゴリには投稿がありません。",
@@ -725,22 +802,113 @@ async def browse_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     buttons = []
+    page_buttons = []
 
-    for item in result.data:
-        buttons.append([
+    for i, item in enumerate(result.data, start=1):
+        text += (
+            f"{i}. {item['title']}\n"
+            f"💰{item['price']}コイン "
+            f"🛒{item.get('purchase_count', 0)}回\n\n"
+        )
+
+        buttons.append(
             InlineKeyboardButton(
-                text=f"{item['title']}（💰{item['price']}）",
+                str(i),
                 callback_data=f"detail:{item['id']}",
             )
-        ])
+        )
 
+    if len(result.data) == 5:
+        page_buttons.append(
+            InlineKeyboardButton(
+                "▶ 次",
+                callback_data=f"page:{category}:2"
+            )
+        )
+
+    keyboard = [
+        buttons,
+    ]
+
+    if page_buttons:
+        keyboard.append(page_buttons)
+    
     await update.message.reply_text(
-        "表示したい投稿を選択してください。",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
     return ConversationHandler.END
 
+async def browse_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    _, category, page = query.data.split(":")
+    page = int(page)
+
+    category_data = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", category)
+        .single()
+        .execute()
+    ).data
+
+    result = (
+        supabase.table("contents")
+        .select("*")
+        .eq("category_id", category_data["id"])
+        .order("created_at", desc=True)
+        .range((page-1)*5, page*5-1)
+        .execute()
+    )
+
+    text = f"📁 {category}\n\n"
+
+    buttons = []
+
+    for i, item in enumerate(result.data, start=1+(page-1)*5):
+        text += (
+            f"{i}. {item['title']}\n"
+            f"💰{item['price']}コイン "
+            f"🛒{item.get('purchase_count',0)}回\n\n"
+        )
+
+        buttons.append(
+            InlineKeyboardButton(
+                str(i),
+                callback_data=f"detail:{item['id']}"
+            )
+        )
+
+    keyboard = [buttons]
+
+    nav = []
+
+    if page > 1:
+        nav.append(
+            InlineKeyboardButton(
+                "◀ 前",
+                callback_data=f"page:{category}:{page-1}"
+            )
+        )
+
+    if len(result.data) == 5:
+        nav.append(
+            InlineKeyboardButton(
+                "▶ 次",
+                callback_data=f"page:{category}:{page+1}"
+            )
+        )
+
+    if nav:
+        keyboard.append(nav)
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def show_detail_callback(
     update: Update,
@@ -822,6 +990,14 @@ async def show_detail_callback(
             )
         ])
 
+    if is_owner:
+        buttons.append([
+            InlineKeyboardButton(
+                "💰 価格変更",
+                callback_data=f"price:{content_id}"
+            )
+        ])
+
     buttons.append([
         InlineKeyboardButton(
             "🚨 通報",
@@ -843,8 +1019,8 @@ async def show_detail_callback(
             reply_markup=markup,
         )
     else:
-        await query.message.reply_photo(
-            photo=file_id,
+        await query.message.reply_document(
+            document=file_id,
             caption=caption,
             reply_markup=markup,
         )
@@ -922,9 +1098,68 @@ async def purchase_content(
         "data": f"detail:{content_id}",
     })()
 
+    if item["media_type"] == "video":
+        await context.bot.send_video(
+            chat_id=buyer_id,
+            video=item["telegram_file_id"],
+            caption=f"🎉 購入した動画\n\n📌 {item['title']}",
+        )
+    else:
+        await context.bot.send_document(
+            chat_id=buyer_id,
+            document=item["telegram_file_id"],
+            caption=f"🎉 購入したファイル\n\n📌 {item['title']}",
+        )
+
     await show_detail_callback(fake, context)
 
+async def start_change_price(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    await query.answer()
 
+    content_id = int(query.data.split(":")[1])
+
+    context.user_data["change_price_content_id"] = content_id
+
+    await query.message.reply_text(
+        "新しい価格を入力してください。（2〜99コイン）"
+    )
+    return CHANGE_PRICE
+
+async def save_new_price(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    try:
+        price = int(update.message.text)
+
+        if price < 2 or price > 99:
+            raise ValueError
+
+    except ValueError:
+        await update.message.reply_text(
+            "2〜99の数字を入力してください。"
+        )
+        return CHANGE_PRICE
+
+    content_id = context.user_data["change_price_content_id"]
+
+    supabase.table("contents").update({
+        "price": price,
+    }).eq("id", content_id).execute()
+
+    context.user_data.pop(
+        "change_price_content_id",
+        None,
+    )
+    await update.message.reply_text(
+        f"✅ 価格を {price} コインに変更しました。"
+    )
+
+    return ConversationHandler.END
 
 async def delete_content(
     update: Update,
@@ -979,7 +1214,38 @@ async def back_to_main(
         reply_markup=main_menu(update.effective_user.id),
     )
 
+async def open_region_admin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return
 
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("➕ 地域追加")],
+            [KeyboardButton("➖ 地域削除")],
+            [KeyboardButton("⬅️ 戻る")],
+        ],
+        resize_keyboard=True,
+    )
+
+    await update.message.reply_text(
+        "📍 地域管理",
+        reply_markup=keyboard,
+    )
+
+async def open_subcategory_admin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    await update.message.reply_text(
+    "📂 サブカテゴリ管理",
+    reply_markup=subcategory_admin_menu(),
+)
 
 async def show_sales_ranking(
     update: Update,
@@ -1037,6 +1303,153 @@ async def show_sales_ranking(
 
     await update.message.reply_text(text)
 
+async def give_coin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text(
+            "使い方:\n/givecoin ユーザーID コイン数"
+        )
+        return
+
+    try:
+        telegram_id = int(context.args[0])
+        amount = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text("数字を入力してください。")
+        return
+
+    user = (
+        supabase.table("users")
+        .select("coin_balance")
+        .eq("telegram_id", telegram_id)
+        .single()
+        .execute()
+    )
+
+    if not user.data:
+        await update.message.reply_text("ユーザーが見つかりません。")
+        return
+
+    new_balance = user.data["coin_balance"] + amount
+
+    supabase.table("users").update(
+        {"coin_balance": new_balance}
+    ).eq(
+        "telegram_id", telegram_id
+    ).execute()
+
+    await update.message.reply_text(
+        f"✅ {telegram_id} に {amount} コイン付与しました。\n"
+        f"現在残高: {new_balance}"
+    )
+
+async def show_popular_ranking(
+    
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not await require_private_chat(update):
+        return
+    contents = (
+        supabase.table("contents")
+        .select("title,purchase_count")
+        .order("purchase_count", desc=True)
+        .limit(5)
+        .execute()
+    )
+
+    if not contents.data:
+        await update.message.reply_text(
+            "🔥 人気ランキング\n\nまだランキングデータがありません。"
+        )
+        return
+
+    medals = ["🥇", "🥈", "🥉"]
+    text = "🔥 人気ランキング\n\n"
+
+    for i, item in enumerate(contents.data):
+        icon = medals[i] if i < 3 else f"{i+1}位"
+
+        text += (
+            f"{icon}\n"
+            f"📌 {item['title']}\n"
+            f"🛒 {item['purchase_count']} 回購入\n\n"
+        )
+
+    await update.message.reply_text(text)
+
+from datetime import datetime, timedelta, timezone
+
+async def daily_ranking_job(context: ContextTypes.DEFAULT_TYPE):
+    today = datetime.now(timezone.utc).date()
+
+    start = datetime.combine(
+        today,
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+
+    end = start + timedelta(days=1)
+
+    result = (
+        supabase.table("contents")
+        .select("*")
+        .eq("media_type", "video")
+        .gte("created_at", start.isoformat())
+        .lt("created_at", end.isoformat())
+        .order("purchase_count", desc=True)
+        .order("created_at")
+        .limit(3)
+        .execute()
+    )
+
+    rewards = [100, 50, 30]
+    medals = ["🥇", "🥈", "🥉"]
+
+    for i, item in enumerate(result.data):
+        reward = rewards[i]
+
+        user = get_user(item["owner_id"])
+
+        supabase.table("users").update({
+            "coin_balance": user.get("coin_balance", 0) + reward
+        }).eq(
+            "telegram_id",
+            item["owner_id"],
+        ).execute()
+
+        await context.bot.send_message(
+            chat_id=item["owner_id"],
+            text=(
+                f"🏆 おめでとうございます！\n\n"
+                f"あなたの動画『{item['title']}』が\n"
+                f"{i+1}位になりました！\n\n"
+                f"🎁 {reward}コイン付与しました！"
+            ),
+        )
+
+    ranking_text = "🏆 本日の動画ランキング\n\n"
+
+    for i, item in enumerate(result.data):
+        ranking_text += (
+            f"{medals[i]} {i+1}位\n"
+            f"📌 {item['title']}\n"
+            f"🛒 {item['purchase_count']}回購入\n"
+            f"🎁 {rewards[i]}コイン\n\n"
+        )
+
+    await context.bot.send_message(
+        chat_id=GROUP_ID,
+        text=ranking_text,
+    )
+
+import asyncio
 
 async def report_content(
     update: Update,
@@ -1148,6 +1561,182 @@ async def add_category_start(
 
     return ADD_CATEGORY
 
+async def add_region_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "追加する地域名を入力してください。"
+    )
+
+    return ADD_REGION
+
+async def add_subcategory_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    categories = get_categories()
+
+    keyboard = [
+        [KeyboardButton(c["name"])]
+        for c in categories
+    ]
+
+    await update.message.reply_text(
+        "親カテゴリを選択してください。",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+
+    return SELECT_PARENT_CATEGORY
+
+async def delete_subcategory_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    categories = get_categories()
+
+    keyboard = [
+        [KeyboardButton(c["name"])]
+        for c in categories
+    ]
+
+    await update.message.reply_text(
+        "削除するサブカテゴリの親カテゴリを選択してください。",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+
+    return SELECT_DELETE_PARENT
+
+async def select_delete_parent(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    parent_name = update.message.text
+
+    category = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", parent_name)
+        .single()
+        .execute()
+    ).data
+
+    context.user_data["delete_parent_id"] = category["id"]
+
+    subs = (
+        supabase.table("subcategories")
+        .select("name")
+        .eq("category_id", category["id"])
+        .order("sort_order")
+        .execute()
+    ).data
+
+    keyboard = [
+        [KeyboardButton(s["name"])]
+        for s in subs
+    ]
+
+    await update.message.reply_text(
+        "削除するサブカテゴリを選択してください。",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+
+    return DELETE_SUBCATEGORY
+
+async def delete_subcategory(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    name = update.message.text.strip()
+
+    parent_id = context.user_data["delete_parent_id"]
+
+    supabase.table("subcategories").delete().eq(
+        "category_id",
+        parent_id,
+    ).eq(
+        "name",
+        name,
+    ).execute()
+
+    await update.message.reply_text(
+        "✅ サブカテゴリを削除しました。",
+        reply_markup=subcategory_admin_menu(),
+    )
+
+    return ConversationHandler.END
+
+async def select_parent_category(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    context.user_data["parent_category"] = update.message.text
+
+    await update.message.reply_text(
+        "追加するサブカテゴリ名を入力してください。"
+    )
+
+    return ADD_SUBCATEGORY
+
+async def add_subcategory(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    name = update.message.text.strip()
+
+    parent_name = context.user_data["parent_category"]
+
+    category = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", parent_name)
+        .single()
+        .execute()
+    ).data
+
+    count = (
+        supabase.table("subcategories")
+        .select("*", count="exact")
+        .eq("category_id", category["id"])
+        .execute()
+    )
+
+    sort_order = count.count or 0
+
+    supabase.table("subcategories").insert({
+        "category_id": category["id"],
+        "name": name,
+        "sort_order": sort_order,
+    }).execute()
+
+    await update.message.reply_text(
+        "✅ サブカテゴリを追加しました。",
+        reply_markup=subcategory_admin_menu(),
+    )
+
+    return ConversationHandler.END
+
 
 async def add_category(
     update: Update,
@@ -1188,6 +1777,67 @@ async def add_category(
 
     return ConversationHandler.END
 
+async def add_region(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    name = update.message.text.strip()
+
+    exists = (
+        supabase.table("regions")
+        .select("id")
+        .eq("name", name)
+        .execute()
+    )
+
+    if exists.data:
+        await update.message.reply_text(
+            "その地域はすでに存在します。"
+        )
+        return ADD_REGION
+
+    supabase.table("regions").insert({
+        "name": name,
+    }).execute()
+
+    await update.message.reply_text(
+        "✅ 地域を追加しました。",
+        reply_markup=ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("➕ 地域追加")],
+                [KeyboardButton("➖ 地域削除")],
+                [KeyboardButton("⬅️ 戻る")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
+
+    return ConversationHandler.END
+
+async def delete_region(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    name = update.message.text.strip()
+
+    supabase.table("regions").delete().eq(
+        "name",
+        name,
+    ).execute()
+
+    await update.message.reply_text(
+        "✅ 地域を削除しました。",
+        reply_markup=ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("➕ 地域追加")],
+                [KeyboardButton("➖ 地域削除")],
+                [KeyboardButton("⬅️ 戻る")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
+
+    return ConversationHandler.END
 
 async def delete_category_start(
     update: Update,
@@ -1214,6 +1864,35 @@ async def delete_category_start(
 
     return DELETE_CATEGORY
 
+async def delete_region_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+
+    regions = (
+        supabase.table("regions")
+        .select("name")
+        .order("name")
+        .execute()
+    ).data
+
+    keyboard = [
+        [KeyboardButton(r["name"])]
+        for r in regions
+    ]
+
+    await update.message.reply_text(
+        "削除する地域を選択してください。",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+
+    return DELETE_REGION
 
 async def delete_category(
     update: Update,
@@ -1245,6 +1924,28 @@ async def cancel(
     )
 
     return ConversationHandler.END
+
+async def require_private_chat(update: Update):
+    if update.effective_chat.type == ChatType.PRIVATE:
+        return True
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🤖 Botを開く",
+                url="https://t.me/develpoing_bot"
+            )
+        ]
+    ])
+
+    await update.effective_message.reply_text(
+        "🔒 この機能はDMでのみ利用できます。\n\n"
+        "👇 下のボタンからBotを開いてください。",
+        reply_markup=keyboard,
+    )
+
+    return False
+
 
 async def welcome_new_member(
     update: Update,
@@ -1287,6 +1988,18 @@ def run_web():
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
+    from datetime import time
+    from zoneinfo import ZoneInfo
+
+    app.job_queue.run_daily(
+        daily_ranking_job,
+        time=time(
+            hour=0,
+            minute=0,
+            tzinfo=ZoneInfo("Asia/Tokyo"),
+        ),
+)
 
     conv = ConversationHandler(
         allow_reentry=True,
@@ -1337,7 +2050,7 @@ def main():
             ],
             MEDIA: [
                 MessageHandler(
-                    filters.PHOTO | filters.VIDEO,
+                    filters.VIDEO | filters.Document.ALL,
                     save_media,
                 )
             ],
@@ -1350,6 +2063,12 @@ def main():
                     filters.Regex("^⚡ 自動設定$"),
                     auto_thumbnail,
                 ),
+            ],
+            CHANGE_PRICE: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    save_new_price,
+                )
             ],
             BROWSE: [
                 MessageHandler(
@@ -1372,32 +2091,86 @@ def main():
     category_conv = ConversationHandler(
         allow_reentry=True,
         entry_points=[
-            MessageHandler(
-                filters.Regex("^➕ カテゴリ追加$"),
-                add_category_start,
-            ),
-            MessageHandler(
-                filters.Regex("^➖ カテゴリ削除$"),
-                delete_category_start,
-            ),
-        ],
+        MessageHandler(
+            filters.Regex("^➕ カテゴリ追加$"),
+            add_category_start,
+        ),
+        MessageHandler(
+            filters.Regex("^➖ カテゴリ削除$"),
+            delete_category_start,
+        ),
+        MessageHandler(
+            filters.Regex("^➕ 地域追加$"),
+            add_region_start,
+        ),
+        MessageHandler(
+            filters.Regex("^➖ 地域削除$"),
+            delete_region_start,
+        ),
+        MessageHandler(
+            filters.Regex("^➕ サブカテゴリ追加$"),
+            add_subcategory_start,
+        ),
+        MessageHandler(
+            filters.Regex("^➖ サブカテゴリ削除$"),
+            delete_subcategory_start,
+        ),
+    ],
+
         states={
-            ADD_CATEGORY: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    add_category,
-                )
-            ],
-            DELETE_CATEGORY: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    delete_category,
-                )
-            ],
-        },
+    ADD_CATEGORY: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            add_category,
+        )
+    ],
+    DELETE_CATEGORY: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            delete_category,
+        )
+    ],
+    ADD_REGION: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            add_region,
+        )
+    ],
+    DELETE_REGION: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            delete_region,
+        )
+    ],
+    SELECT_PARENT_CATEGORY: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        select_parent_category,
+    )
+    ],
+    ADD_SUBCATEGORY: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        add_subcategory,
+    )
+    ],
+    SELECT_DELETE_PARENT: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            select_delete_parent,
+        )
+    ],
+    DELETE_SUBCATEGORY: [
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            delete_subcategory,
+        )
+    ],
+    },
+
         fallbacks=[
             CommandHandler("cancel", cancel)
-        ],
+    ],
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -1409,12 +2182,28 @@ def main():
         )
     )
 
+    app.add_handler(CommandHandler("givecoin", give_coin))
+
     app.add_handler(
         MessageHandler(
             filters.Regex("^👤 マイページ$"),
             show_my_page,
         )
     )
+
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^📤 自分の投稿$"),
+            show_my_posts,
+        )
+    )
+
+    app.add_handler(
+    MessageHandler(
+        filters.Regex("^🧾 購入履歴$"),
+        show_purchase_history,
+    )
+)
 
     app.add_handler(
         MessageHandler(
@@ -1428,7 +2217,16 @@ def main():
             filters.Regex("^📊 売上ランキング$"),
             show_sales_ranking,
         )
+
     )
+
+    app.add_handler(
+    MessageHandler(
+        filters.Regex("^🔥 人気ランキング$"),
+        show_popular_ranking,
+        )
+    )
+
 
     app.add_handler(
         MessageHandler(
@@ -1443,6 +2241,20 @@ def main():
             open_category_admin,
         )
     )
+
+    app.add_handler(
+    MessageHandler(
+        filters.Regex("^📍 地域管理$"),
+        open_region_admin,
+    )
+)
+
+    app.add_handler(
+    MessageHandler(
+        filters.Regex("^📁 サブカテゴリ管理$"),
+        open_subcategory_admin,
+    )
+)
 
     app.add_handler(
         MessageHandler(
@@ -1467,7 +2279,7 @@ def main():
 
     app.add_handler(
         MessageHandler(
-            filters.Regex("^🖼 写真一覧$"),
+            filters.Regex("^📄 ファイル一覧$"),
             show_photos,
         )
     )
@@ -1482,6 +2294,28 @@ def main():
     app.add_handler(conv)
     app.add_handler(category_conv)
 
+    price_conv = ConversationHandler(
+    entry_points=[
+        CallbackQueryHandler(
+            start_change_price,
+            pattern="^price:"
+        )
+    ],
+    states={
+        CHANGE_PRICE: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                save_new_price,
+            )
+        ]
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel),
+    ],
+)
+
+    app.add_handler(price_conv)
+
     app.add_handler(
         CallbackQueryHandler(
             change_page,
@@ -1493,6 +2327,13 @@ def main():
         CallbackQueryHandler(
             show_detail_callback,
             pattern="^detail:"
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
+            browse_page,
+            pattern="^page:"
         )
     )
 
