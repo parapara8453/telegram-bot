@@ -1900,9 +1900,33 @@ async def delete_category(
 ):
     name = update.message.text
 
+    # カテゴリID取得
+    category = (
+        supabase.table("categories")
+        .select("id")
+        .eq("name", name)
+        .single()
+        .execute()
+    )
+
+    category_id = category.data["id"]
+
+    # このカテゴリの投稿を全部削除
+    supabase.table("contents").delete().eq(
+        "category_id",
+        category_id,
+    ).execute()
+
+    # サブカテゴリを全部削除
+    supabase.table("subcategories").delete().eq(
+        "category_id",
+        category_id,
+    ).execute()
+
+    # 最後にカテゴリ削除
     supabase.table("categories").delete().eq(
-        "name",
-        name,
+        "id",
+        category_id,
     ).execute()
 
     await update.message.reply_text(
