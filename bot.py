@@ -2009,12 +2009,25 @@ def run_web():
         use_reloader=False,
     )
 
+async def error_handler(update, context):
+    print("======== ERROR ========")
+    print(context.error)
+
+    try:
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "⚠️ エラーが発生しました。\nしばらくしてからもう一度お試しください。"
+            )
+    except Exception:
+        pass
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     from datetime import time
     from zoneinfo import ZoneInfo
+
+    app.add_error_handler(error_handler)
 
     app.job_queue.run_daily(
         daily_ranking_job,
