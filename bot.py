@@ -1054,6 +1054,9 @@ async def purchase_content(
 ):
     query = update.callback_query
     await query.answer()
+    
+    if not await require_private_callback(update):
+        return
 
     content_id = int(query.data.split(":")[1])
     buyer_id = query.from_user.id
@@ -1142,6 +1145,9 @@ async def start_change_price(
     query = update.callback_query
     await query.answer()
 
+    if not await require_private_callback(update):
+        return
+
     content_id = int(query.data.split(":")[1])
 
     context.user_data["change_price_content_id"] = content_id
@@ -1189,6 +1195,9 @@ async def delete_content(
 ):
     query = update.callback_query
     await query.answer()
+
+    if not await require_private_callback(update):
+        return
 
     if query.from_user.id != ADMIN_ID:
         return
