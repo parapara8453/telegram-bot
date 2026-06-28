@@ -1014,12 +1014,11 @@ async def show_detail_callback(
     markup = InlineKeyboardMarkup(buttons)
 
     file_id = (
-        item["telegram_file_id"]
-        if has_access else item["thumbnail_file_id"]
-    )
+    item["telegram_file_id"]
+    if has_access else item["thumbnail_file_id"]
+)
 
     if item["media_type"] == "video":
-
         if has_access:
             await query.message.reply_video(
                 video=item["telegram_file_id"],
@@ -1032,13 +1031,12 @@ async def show_detail_callback(
                 caption=caption,
                 reply_markup=markup,
             )
-            
-        else:
-            await query.message.reply_document(
-                document=file_id,
-                caption=caption,
-                reply_markup=markup,
-            )
+    else:
+        await query.message.reply_document(
+            document=file_id,
+            caption=caption,
+            reply_markup=markup,
+        )
 
 
 async def purchase_content(
