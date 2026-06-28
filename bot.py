@@ -443,6 +443,7 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("① save_media 開始")
     if update.message.document:
         file_id = update.message.document.file_id
 
@@ -454,6 +455,7 @@ async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return await finish_upload(update, context)
 
+    if update.message.video:
         context.user_data["telegram_file_id"] = update.message.video.file_id
         context.user_data["file_size"] = update.message.video.file_size or 0
         context.user_data["media_type"] = "video"
@@ -467,27 +469,35 @@ async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await telegram_file.download_to_drive(temp_video.name)
+        print("② ダウンロード完了")
 
         context.user_data["temp_video_path"] = temp_video.name
 
         cap = cv2.VideoCapture(temp_video.name)
+        print("③ VideoCapture作成")
 
         success, frame = cap.read()
+        print("④ cap.read =", success)
 
         if success:
             thumb_path = temp_video.name.replace(".mp4", ".jpg")
 
             cv2.imwrite(thumb_path, frame)
+            print("⑤ jpg保存")
 
             with open(thumb_path, "rb") as photo:
                 msg = await context.bot.send_photo(
                     chat_id=update.effective_chat.id,
                     photo=photo,
                 )
+                print("⑥ Telegramへ送信")
 
             context.user_data["auto_thumbnail_file_id"] = (
                 msg.photo[-1].file_id
             )
+
+            print("⑦ file_id保存")
+
 
         cap.release()
 
@@ -501,7 +511,7 @@ one_time_keyboard=True,
 ),
 )
 
-
+        print("⑧ THUMBNAILへ")
         return THUMBNAIL
 
     await update.message.reply_text("動画またはファイルを送信してください。")
@@ -1066,17 +1076,12 @@ async def show_detail_callback(
                 caption=caption,
                 reply_markup=markup,
             )
-        else:
-            await query.message.reply_text(
-                caption,
-                reply_markup=markup,
-            )
-    else:
-        await query.message.reply_document(
-            document=file_id,
-            caption=caption,
-            reply_markup=markup,
-        )
+            else:
+                await query.message.reply_photo(
+                    photo=item["thumbnail_file_id"],
+                    caption=caption,
+                    reply_markup=markup,
+                )
 
 
 async def purchase_content(
