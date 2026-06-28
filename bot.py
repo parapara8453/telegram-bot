@@ -1026,9 +1026,8 @@ async def show_detail_callback(
                 reply_markup=markup,
             )
         else:
-            await query.message.reply_photo(
-                photo=item["thumbnail_file_id"],
-                caption=caption,
+            await query.message.reply_text(
+                caption,
                 reply_markup=markup,
             )
     else:
