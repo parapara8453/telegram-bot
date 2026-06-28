@@ -1112,17 +1112,17 @@ async def purchase_content(
     })()
 
     if item["media_type"] == "video":
-        await context.bot.send_video(
-            chat_id=buyer_id,
-            video=item["telegram_file_id"],
-            caption=f"🎉 購入した動画\n\n📌 {item['title']}",
-        )
-    else:
-        await context.bot.send_document(
-            chat_id=buyer_id,
-            document=item["telegram_file_id"],
-            caption=f"🎉 購入したファイル\n\n📌 {item['title']}",
-        )
+        if has_access:
+            await query.message.reply_video(
+                video=item["telegram_file_id"],
+                caption=caption,
+                reply_markup=markup,
+            )
+        else:
+            await query.message.reply_text(
+                caption,
+                reply_markup=markup,
+            )
 
     await show_detail_callback(fake, context)
 
