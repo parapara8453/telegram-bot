@@ -1,4 +1,5 @@
 import os
+import traceback
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
@@ -2018,9 +2019,16 @@ def run_web():
         use_reloader=False,
     )
 
+import traceback
+
 async def error_handler(update, context):
     print("======== ERROR ========")
-    print(context.error)
+
+    traceback.print_exception(
+        type(context.error),
+        context.error,
+        context.error.__traceback__,
+    )
 
     try:
         if update and update.effective_message:
