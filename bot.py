@@ -3,6 +3,8 @@ import traceback
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
+import tempfile
+import cv2
 
 from telegram import (
     Update,
@@ -456,12 +458,41 @@ async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["telegram_file_id"] = update.message.video.file_id
         context.user_data["file_size"] = update.message.video.file_size or 0
         context.user_data["media_type"] = "video"
+        video = update.message.video
 
-        context.user_data["auto_thumbnail_file_id"] = (
-            update.message.video.thumbnail.file_id
-            if update.message.video.thumbnail
-            else update.message.video.file_id
+        telegram_file = await context.bot.get_file(video.file_id)
+
+        temp_video = tempfile.NamedTemporaryFile(
+            suffix=".mp4",
+            delete=False,
         )
+
+        await telegram_file.download_to_drive(temp_video.name)
+
+        context.user_data["temp_video_path"] = temp_video.name
+
+        cap = cv2.VideoCapture(temp_video.name)
+
+        success, frame = cap.read()
+
+        if success:
+            thumb_path = temp_video.name.replace(".mp4", ".jpg")
+
+            cv2.imwrite(thumb_path, frame)
+
+            with open(thumb_path, "rb") as photo:
+                msg = await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=photo,
+                )
+
+            context.user_data["auto_thumbnail_file_id"] = (
+                msg.photo[-1].file_id
+            )
+
+cap.release()
+
+        context.user_data["temp_video_path"] = temp_video.name
 
         await update.message.reply_text(
 "サムネイルを設定してください。\n"
@@ -539,7 +570,10 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "region_id": context.user_data["region_id"],
         "price": context.user_data["price"],
         "telegram_file_id": context.user_data["telegram_file_id"],
-        "thumbnail_file_id": context.user_data.get("thumbnail_file_id"),
+        "thumbnail_file_id": context.user_data.get(
+        "thumbnail_file_id",
+        context.user_data.get("auto_thumbnail_file_id")
+    ),
     }).execute()
 
     keyboard = InlineKeyboardMarkup([
