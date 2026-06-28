@@ -612,12 +612,16 @@ async def show_media_list(
 
 
 async def show_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_private_chat(update):
+        return
+
     await show_media_list(update, context, "video", "🎥 動画一覧")
 
-
 async def show_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_media_list(update, context, "document", "📄 ファイル一覧")
+    if not await require_private_chat(update):
+        return
 
+    await show_media_list(update, context, "document", "📄 ファイル一覧")
 
 async def show_all_contents(
     update: Update,
@@ -735,6 +739,8 @@ async def change_page(
 ):
     query = update.callback_query
     await query.answer()
+    if not await require_private_callback(update):
+        return
 
     page = context.user_data.get("page", 0)
 
@@ -849,6 +855,8 @@ async def browse_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def browse_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if not await require_private_callback(update):
+        return
 
     _, category, page = query.data.split(":")
     page = int(page)
@@ -922,6 +930,8 @@ async def show_detail_callback(
 ):
     query = update.callback_query
     await query.answer()
+    if not await require_private_callback(update):
+        return
     await query.edit_message_reply_markup(reply_markup=None)
 
     content_id = int(query.data.split(":")[1])
@@ -1967,6 +1977,16 @@ async def require_private_chat(update: Update):
 
     return False
 
+async def require_private_callback(update: Update):
+    if update.effective_chat.type == ChatType.PRIVATE:
+        return True
+
+    query = update.callback_query
+    await query.answer(
+        "🤖 この機能はBotとのDMで利用してください。",
+        show_alert=True,
+    )
+    return False
 
 async def welcome_new_member(
     update: Update,
