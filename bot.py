@@ -135,7 +135,6 @@ def get_user(telegram_id, username=None):
         .execute()
     ).data
 
-
 def calc_reward(media_type, file_size):
     if media_type == "document":
         return 10
@@ -1952,21 +1951,6 @@ async def cancel(
 async def require_private_chat(update: Update):
     if update.effective_chat.type == ChatType.PRIVATE:
         return True
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "🤖 Botを開く",
-                url="https://t.me/develpoing_bot"
-            )
-        ]
-    ])
-
-    await update.effective_message.reply_text(
-        "🔒 この機能はDMでのみ利用できます。\n\n"
-        "👇 下のボタンからBotを開いてください。",
-        reply_markup=keyboard,
-    )
 
     return False
 
