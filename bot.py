@@ -1020,25 +1020,25 @@ async def show_detail_callback(
 
     if item["media_type"] == "video":
 
-    if has_access:
-        await query.message.reply_video(
-            video=item["telegram_file_id"],
-            caption=caption,
-            reply_markup=markup,
-        )
-    else:
-        await query.message.reply_photo(
-            photo=item["thumbnail_file_id"],
-            caption=caption,
-            reply_markup=markup,
-        )
-        
-    else:
-        await query.message.reply_document(
-            document=file_id,
-            caption=caption,
-            reply_markup=markup,
-        )
+        if has_access:
+            await query.message.reply_video(
+                video=item["telegram_file_id"],
+                caption=caption,
+                reply_markup=markup,
+            )
+        else:
+            await query.message.reply_photo(
+                photo=item["thumbnail_file_id"],
+                caption=caption,
+                reply_markup=markup,
+            )
+            
+        else:
+            await query.message.reply_document(
+                document=file_id,
+                caption=caption,
+                reply_markup=markup,
+            )
 
 
 async def purchase_content(
