@@ -146,6 +146,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_private_chat(update):
         return
 
+    if context.args and context.args[0] == "welcome":
+        await update.message.reply_text(
+            "🎉 グループから来ていただきありがとうございます！\n\n"
+            "まずは /start を押して利用を開始してください。"
+        )
+
     context.user_data.clear()
 
     await update.message.reply_text(
