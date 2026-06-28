@@ -1082,7 +1082,12 @@ async def show_detail_callback(
                     caption=caption,
                     reply_markup=markup,
                 )
-
+        else:
+            await query.message.reply_document(
+                document=file_id,
+                caption=caption,
+                reply_markup=markup,
+            )
 
 async def purchase_content(
     update: Update,
