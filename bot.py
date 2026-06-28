@@ -454,7 +454,6 @@ async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return await finish_upload(update, context)
 
-    if update.message.video:
         context.user_data["telegram_file_id"] = update.message.video.file_id
         context.user_data["file_size"] = update.message.video.file_size or 0
         context.user_data["media_type"] = "video"
@@ -490,9 +489,7 @@ async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg.photo[-1].file_id
             )
 
-cap.release()
-
-        context.user_data["temp_video_path"] = temp_video.name
+        cap.release()
 
         await update.message.reply_text(
 "サムネイルを設定してください。\n"
