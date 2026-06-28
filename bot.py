@@ -441,65 +441,15 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("① save_media 開始")
     if update.message.document:
-        file_id = update.message.document.file_id
-
-        context.user_data["telegram_file_id"] = file_id
-        context.user_data["file_size"] = (
-            update.message.document.file_size or 0
-        )
+        context.user_data["telegram_file_id"] = update.message.document.file_id
+        context.user_data["file_size"] = update.message.document.file_size or 0
         context.user_data["media_type"] = "document"
-
         return await finish_upload(update, context)
-
-    if update.message.video:
-        context.user_data["telegram_file_id"] = update.message.video.file_id
-        context.user_data["file_size"] = update.message.video.file_size or 0
-        context.user_data["media_type"] = "video"
-
-        if update.message.video.thumbnail:
-            context.user_data["auto_thumbnail_file_id"] = (
-                update.message.video.thumbnail.file_id
-            )
-        else:
-            context.user_data["auto_thumbnail_file_id"] = (
-                update.message.video.file_id
-            )
-
-        await update.message.reply_text(
-"サムネイルを設定してください。\n"
-"写真を送ると手動設定、ボタンを押すと自動設定になります。",
-reply_markup=ReplyKeyboardMarkup(
-[[KeyboardButton("⚡ 自動設定")]],
-resize_keyboard=True,
-one_time_keyboard=True,
-),
-)
-
-        print("⑧ THUMBNAILへ")
-        return THUMBNAIL
 
     await update.message.reply_text("動画またはファイルを送信してください。")
     return MEDIA
-
-
-async def save_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("サムネイル用の写真を送信してください。")
-        return THUMBNAIL
-
-    context.user_data["thumbnail_file_id"] = update.message.photo[-1].file_id
-    return await finish_upload(update, context)
-
-
-async def auto_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["thumbnail_file_id"] = (
-        context.user_data["auto_thumbnail_file_id"]
-    )
-    return await finish_upload(update, context)
-
-
+        
 async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user = get_user(telegram_id, update.effective_user.username)
@@ -543,10 +493,6 @@ async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "region_id": context.user_data["region_id"],
         "price": context.user_data["price"],
         "telegram_file_id": context.user_data["telegram_file_id"],
-        "thumbnail_file_id": context.user_data.get(
-        "thumbnail_file_id",
-        context.user_data.get("auto_thumbnail_file_id")
-    ),
     }).execute()
 
     keyboard = InlineKeyboardMarkup([
@@ -1030,11 +976,7 @@ async def show_detail_callback(
 
     markup = InlineKeyboardMarkup(buttons)
 
-    file_id = (
-        item["telegram_file_id"]
-        if has_access
-        else item["thumbnail_file_id"]
-    )
+    file_id = item["telegram_file_id"]
 
     if item["media_type"] == "video":
         if has_access:
@@ -1044,9 +986,8 @@ async def show_detail_callback(
                 reply_markup=markup,
             )
         else:
-            await query.message.reply_photo(
-                photo=item["thumbnail_file_id"],
-                caption=caption,
+            await query.message.reply_text(
+                caption,
                 reply_markup=markup,
             )
     else:
@@ -1130,19 +1071,6 @@ async def purchase_content(
         "message": query.message,
         "data": f"detail:{content_id}",
     })()
-
-    if item["media_type"] == "video":
-        if has_access:
-            await query.message.reply_video(
-                video=item["telegram_file_id"],
-                caption=caption,
-                reply_markup=markup,
-            )
-        else:
-            await query.message.reply_text(
-                caption,
-                reply_markup=markup,
-            )
 
     await show_detail_callback(fake, context)
 
@@ -2150,16 +2078,6 @@ def main():
                     filters.VIDEO | filters.Document.ALL,
                     save_media,
                 )
-            ],
-            THUMBNAIL: [
-                MessageHandler(
-                    filters.PHOTO,
-                    save_thumbnail,
-                ),
-                MessageHandler(
-                    filters.Regex("^⚡ 自動設定$"),
-                    auto_thumbnail,
-                ),
             ],
             CHANGE_PRICE: [
                 MessageHandler(
