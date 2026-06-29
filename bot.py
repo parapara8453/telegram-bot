@@ -34,10 +34,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from services.user import get_user
 
 from config import (
-    TOKEN,
-    ADMIN_ID,
-    GROUP_ID,
-    PAGE_SIZE,
     MEDIA_TYPE,
     CATEGORY1,
     CATEGORY2,
@@ -54,10 +50,11 @@ from config import (
     SELECT_PARENT_CATEGORY,
     ADD_SUBCATEGORY,
     SELECT_DELETE_PARENT,
-    CHANGE_PRICE,
     DELETE_SUBCATEGORY,
-    )
-
+    CHANGE_PRICE,
+    ADMIN_USER_SEARCH,
+    ADMIN_GIVE_COIN,
+)
 
 def get_categories():
     result = (
