@@ -441,13 +441,43 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.document:
-        context.user_data["telegram_file_id"] = update.message.document.file_id
-        context.user_data["file_size"] = update.message.document.file_size or 0
-        context.user_data["media_type"] = "document"
+    
+    print("===== save_media =====")
+    print(update.message)
+    print("video =", update.message.video)
+    print("document =", update.message.document)
+    print("animation =", update.message.animation)
+    print("effective_attachment =", update.message.effective_attachment)
+
+    # 通常の動画
+    if update.message.video:
+        context.user_data["telegram_file_id"] = update.message.video.file_id
+        context.user_data["file_size"] = update.message.video.file_size or 0
+        context.user_data["media_type"] = "video"
+
         return await finish_upload(update, context)
 
-    await update.message.reply_text("動画またはファイルを送信してください。")
+    # ファイル
+    if update.message.document:
+        context.user_data["telegram_file_id"] = update.message.document.file_id
+        context.user_data["file_size"] = (
+            update.message.document.file_size or 0
+        )
+
+        # 動画を「ファイルとして送信」した場合
+        if (
+            update.message.document.mime_type
+            and update.message.document.mime_type.startswith("video/")
+        ):
+            context.user_data["media_type"] = "video"
+        else:
+            context.user_data["media_type"] = "document"
+
+        return await finish_upload(update, context)
+
+    await update.message.reply_text(
+        "動画またはファイルを送信してください。"
+    )
     return MEDIA
         
 async def finish_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
