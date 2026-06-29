@@ -36,9 +36,12 @@ def main_menu(user_id):
 def admin_menu():
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("➕ カテゴリ追加")],
-            [KeyboardButton("➖ カテゴリ削除")],
-            [KeyboardButton("⬅ 戻る")],
+            [KeyboardButton("👤 ユーザー管理")],
+            [KeyboardButton("📊 売上ランキング")],
+            [KeyboardButton("🔥 人気ランキング")],
+            [KeyboardButton("🚨 通報一覧")],
+            [KeyboardButton("🗂 カテゴリ管理")],
+            [KeyboardButton("⬅️ 戻る")],
         ],
         resize_keyboard=True,
     )

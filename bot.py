@@ -1236,6 +1236,208 @@ async def open_admin_menu(
         reply_markup=admin_menu(),
     )
 
+async def admin_user_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    await update.message.reply_text(
+        "🔍 検索するユーザー名を入力してください。"
+    )
+
+    return ADMIN_USER_SEARCH
+
+async def admin_user_search(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyword = update.message.text.strip()
+
+    result = (
+        supabase.table("users")
+        .select("*")
+        .ilike("username", f"%{keyword}%")
+        .limit(10)
+        .execute()
+    )
+
+    if not result.data:
+        await update.message.reply_text(
+            "ユーザーが見つかりませんでした。"
+        )
+        return ADMIN_USER_SEARCH
+
+    keyboard = []
+
+    for user in result.data:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"@{user['username']} ({user['coin_balance']}🪙)",
+                callback_data=f"adminuser:{user['telegram_id']}",
+            )
+        ])
+
+    await update.message.reply_text(
+        "ユーザーを選択してください。",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+    return ConversationHandler.END
+
+async def admin_user_detail(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = int(query.data.split(":")[1])
+
+    user = (
+        supabase.table("users")
+        .select("*")
+        .eq("telegram_id", telegram_id)
+        .single()
+        .execute()
+    ).data
+
+    post_count = (
+        supabase.table("contents")
+        .select("id", count="exact")
+        .eq("owner_id", telegram_id)
+        .execute()
+    ).count
+
+    purchase_count = (
+        supabase.table("purchases")
+        .select("id", count="exact")
+        .eq("buyer_id", telegram_id)
+        .execute()
+    ).count
+
+    text = (
+        f"👤 @{user['username']}\n\n"
+        f"🆔 {telegram_id}\n"
+        f"🪙 {user['coin_balance']} コイン\n"
+        f"📤 投稿数: {post_count}\n"
+        f"🛒 購入数: {purchase_count}"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "➕10",
+                callback_data=f"coin:{telegram_id}:10",
+            ),
+            InlineKeyboardButton(
+                "➕50",
+                callback_data=f"coin:{telegram_id}:50",
+            ),
+            InlineKeyboardButton(
+                "➕100",
+                callback_data=f"coin:{telegram_id}:100",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "➖10",
+                callback_data=f"coin:{telegram_id}:-10",
+            ),
+            InlineKeyboardButton(
+                "➖50",
+                callback_data=f"coin:{telegram_id}:-50",
+            ),
+            InlineKeyboardButton(
+                "➖100",
+                callback_data=f"coin:{telegram_id}:-100",
+            ),
+        ],
+    ]
+
+    await query.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+async def admin_change_coin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    await query.answer()
+
+    _, telegram_id, amount = query.data.split(":")
+
+    telegram_id = int(telegram_id)
+    amount = int(amount)
+
+    result = (
+        supabase.table("users")
+        .select("*")
+        .eq("telegram_id", telegram_id)
+        .single()
+        .execute()
+    )
+
+    user = result.data
+
+    new_balance = max(
+        0,
+        user["coin_balance"] + amount,
+    )
+
+    supabase.table("users").update({
+        "coin_balance": new_balance,
+    }).eq(
+        "telegram_id",
+        telegram_id,
+    ).execute()
+
+    await query.answer("✅ コインを更新しました")
+
+    user["coin_balance"] = new_balance
+
+    post_count = (
+        supabase.table("contents")
+        .select("id", count="exact")
+        .eq("owner_id", telegram_id)
+        .execute()
+    ).count
+
+    purchase_count = (
+        supabase.table("purchases")
+        .select("id", count="exact")
+        .eq("buyer_id", telegram_id)
+        .execute()
+    ).count
+
+    text = (
+        f"👤 @{user['username']}\n\n"
+        f"🆔 {telegram_id}\n"
+        f"🪙 {new_balance} コイン\n"
+        f"📤 投稿数: {post_count}\n"
+        f"🛒 購入数: {purchase_count}"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("➕10", callback_data=f"coin:{telegram_id}:10"),
+            InlineKeyboardButton("➕50", callback_data=f"coin:{telegram_id}:50"),
+            InlineKeyboardButton("➕100", callback_data=f"coin:{telegram_id}:100"),
+        ],
+        [
+            InlineKeyboardButton("➖10", callback_data=f"coin:{telegram_id}:-10"),
+            InlineKeyboardButton("➖50", callback_data=f"coin:{telegram_id}:-50"),
+            InlineKeyboardButton("➖100", callback_data=f"coin:{telegram_id}:-100"),
+        ],
+    ]
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 async def back_to_main(
     update: Update,
@@ -2162,6 +2364,14 @@ def main():
         search_title,
     )
 ],
+
+            ADMIN_USER_SEARCH: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        admin_user_search,
+    )
+],
+    
         },
         fallbacks=[
             CommandHandler("cancel", cancel)
@@ -2317,6 +2527,13 @@ def main():
 
     app.add_handler(
         MessageHandler(
+            filters.Regex("^👤 ユーザー管理$"),
+            admin_user_start,
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
             filters.Regex("^🗂 カテゴリ管理$"),
             open_category_admin,
         )
@@ -2435,6 +2652,20 @@ def main():
         CallbackQueryHandler(
             delete_content,
             pattern="^delete:"
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
+            admin_user_detail,
+            pattern="^adminuser:"
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
+            admin_change_coin,
+            pattern="^coin:"
         )
     )
 
