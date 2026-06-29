@@ -441,7 +441,7 @@ async def input_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
+
     print("===== save_media =====")
     print(update.message)
     print("video =", update.message.video)
@@ -1091,18 +1091,53 @@ async def purchase_content(
         "price": item["price"],
     }).execute()
 
-    await query.message.reply_text("✅ 購入が完了しました。")
+        await query.message.reply_text("✅ 購入が完了しました。")
 
-    fake = type("x",(object,),{})()
-    fake.callback_query = type("y",(object,),{
-        "answer": query.answer,
-        "edit_message_reply_markup": query.edit_message_reply_markup,
-        "from_user": query.from_user,
-        "message": query.message,
-        "data": f"detail:{content_id}",
-    })()
+        category = (
+            supabase.table("categories")
+            .select("name")
+            .eq("id", item["category_id"])
+            .single()
+            .execute()
+        ).data
 
-    await show_detail_callback(fake, context)
+        region = (
+            supabase.table("regions")
+            .select("name")
+            .eq("id", item["region_id"])
+            .single()
+            .execute()
+        ).data
+
+        caption = (
+            f"📌 {item['title']}\n"
+            f"💰 {item['price']} コイン\n"
+            f"📂 {category['name']} / {region['name']}"
+        )
+
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    "🚨 通報",
+                    callback_data=f"report:{content_id}",
+                )
+            ]
+        ]
+
+        if item["media_type"] == "video":
+            await query.message.reply_video(
+                video=item["telegram_file_id"],
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+        else:
+            await query.message.reply_document(
+                document=item["telegram_file_id"],
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+
+        return
 
 async def start_change_price(
     update: Update,
