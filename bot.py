@@ -1091,53 +1091,53 @@ async def purchase_content(
         "price": item["price"],
     }).execute()
 
-        await query.message.reply_text("✅ 購入が完了しました。")
+    await query.message.reply_text("✅ 購入が完了しました。")
 
-        category = (
-            supabase.table("categories")
-            .select("name")
-            .eq("id", item["category_id"])
-            .single()
-            .execute()
-        ).data
+    category = (
+        supabase.table("categories")
+        .select("name")
+        .eq("id", item["category_id"])
+        .single()
+        .execute()
+    ).data
 
-        region = (
-            supabase.table("regions")
-            .select("name")
-            .eq("id", item["region_id"])
-            .single()
-            .execute()
-        ).data
+    region = (
+        supabase.table("regions")
+        .select("name")
+        .eq("id", item["region_id"])
+        .single()
+        .execute()
+    ).data
 
-        caption = (
-            f"📌 {item['title']}\n"
-            f"💰 {item['price']} コイン\n"
-            f"📂 {category['name']} / {region['name']}"
+    caption = (
+        f"📌 {item['title']}\n"
+        f"💰 {item['price']} コイン\n"
+        f"📂 {category['name']} / {region['name']}"
+    )
+
+    buttons = [
+        [
+            InlineKeyboardButton(
+                "🚨 通報",
+                callback_data=f"report:{content_id}",
+            )
+        ]
+    ]
+
+    if item["media_type"] == "video":
+        await query.message.reply_video(
+            video=item["telegram_file_id"],
+            caption=caption,
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    else:
+        await query.message.reply_document(
+            document=item["telegram_file_id"],
+            caption=caption,
+            reply_markup=InlineKeyboardMarkup(buttons),
         )
 
-        buttons = [
-            [
-                InlineKeyboardButton(
-                    "🚨 通報",
-                    callback_data=f"report:{content_id}",
-                )
-            ]
-        ]
-
-        if item["media_type"] == "video":
-            await query.message.reply_video(
-                video=item["telegram_file_id"],
-                caption=caption,
-                reply_markup=InlineKeyboardMarkup(buttons),
-            )
-        else:
-            await query.message.reply_document(
-                document=item["telegram_file_id"],
-                caption=caption,
-                reply_markup=InlineKeyboardMarkup(buttons),
-            )
-
-        return
+    return
 
 async def start_change_price(
     update: Update,
